@@ -6,6 +6,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal as HorizontalContainer
 from textual.widgets import Button, Header, Footer, Input, Label, Select, TextArea
 
+from porter import collections
 from porter.http_client import send_request, validate_url
 from porter.widgets import HeaderRow, RequestEditor, ResponseViewer
 
@@ -122,8 +123,60 @@ class PorterApp(App):
             yield ResponseViewer()
         yield Footer()
 
+    def on_mount(self) -> None:
+        """Load saved request on app startup."""
+        saved_request = collections.load_request()
+        if saved_request:
+            self._load_request_into_ui(saved_request)
+
+    def _load_request_into_ui(self, request: collections.Request) -> None:
+        """Populate the UI with a saved request."""
+        # Set method
+        method_select = self.query_one("#method-select", Select)
+        method_select.value = request.method
+
+        # Set URL
+        url_input = self.query_one("#url-input", Input)
+        url_input.value = request.url
+
+        # Set body
+        body_area = self.query_one("#body-text", TextArea)
+        body_area.text = request.body
+
+        # Set headers - clear existing rows first, then add new ones
+        container = self.query_one("#headers-container")
+        # Remove all existing header rows
+        for row in container.query(HeaderRow):
+            row.remove()
+
+        # Add header rows for saved headers
+        if request.headers:
+            for key, value in request.headers.items():
+                row = HeaderRow(key=key, value=value)
+                container.mount(row)
+        else:
+            # Add one empty row if no headers
+            container.mount(HeaderRow())
+
+    def _get_current_request(self) -> collections.Request:
+        """Get the current request state from the UI."""
+        method = self.query_one("#method-select", Select).value
+        url = self.query_one("#url-input", Input).value
+        headers = self._get_headers_from_ui()
+        body = self.query_one("#body-text", TextArea).text
+
+        return collections.Request(
+            method=method,
+            url=url,
+            headers=headers,
+            body=body,
+        )
+
     def action_quit(self) -> None:
-        """Quit the application."""
+        """Save current request and quit the application."""
+        # Save current request before exiting
+        current_request = self._get_current_request()
+        collections.save_request(current_request)
         self.exit()
 
     async def action_send_request(self) -> None:
@@ -265,8 +318,7 @@ class PorterApp(App):
     def _add_header_row(self) -> None:
         """Add a new header row to the headers container."""
         container = self.query_one("#headers-container")
-        row_count = len(container.query(HeaderRow))
-        new_row = HeaderRow(id=f"header-row-{row_count}")
+        new_row = HeaderRow()
         container.mount(new_row)
 
     def _remove_header_row(self) -> None:
