@@ -111,6 +111,7 @@ class PorterApp(App):
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
         ("ctrl+enter", "send_request", "Send"),
+        ("ctrl+shift+f", "format_json", "Format JSON"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -162,6 +163,24 @@ class PorterApp(App):
 
         # Display the response
         self._display_response(response)
+
+    def action_format_json(self) -> None:
+        """Format the JSON in the request body editor."""
+        body_area = self.query_one("#body-text", TextArea)
+        body_text = body_area.text.strip()
+
+        if not body_text:
+            self.notify("Body is empty", severity="warning")
+            return
+
+        try:
+            # Parse and re-format the JSON
+            parsed = json.loads(body_text)
+            formatted = json.dumps(parsed, indent=2)
+            body_area.text = formatted
+            self.notify("JSON formatted successfully", severity="information")
+        except json.JSONDecodeError as e:
+            self.notify(f"Invalid JSON: {str(e)}", severity="error")
 
     def _get_headers_from_ui(self) -> dict[str, str]:
         """Extract headers from the UI."""
