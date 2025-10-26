@@ -1,0 +1,31 @@
+[project]
+name = "porter"
+version = "0.1.0"
+description = "A terminal-based HTTP client with a text user interface"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=0.40.0",
+    "httpx>=0.25.0",
+]
+authors = [
+    { name = "Your Name", email = "your.email@example.com" }
+]
+keywords = ["http", "client", "tui", "api", "rest"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.scripts]
+porter = "porter.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
