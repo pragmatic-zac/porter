@@ -213,6 +213,13 @@ class RequestEditor(Vertical):
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
+        # Request name input
+        yield NavigableInput(
+            placeholder="Request name (e.g., Get Users, Create Order)",
+            value="Untitled Request",
+            id="request-name",
+        )
+
         # Method selector and URL input in one row
         with Horizontal(id="request-line"):
             yield Select(

@@ -19,15 +19,18 @@ class Request:
         url: str = "",
         headers: dict[str, str] | None = None,
         body: str = "",
+        name: str = "Untitled Request",
     ):
         self.method = method
         self.url = url
         self.headers = headers or {}
         self.body = body
+        self.name = name
 
     def to_dict(self) -> dict:
         """Convert request to dictionary for JSON serialization."""
         return {
+            "name": self.name,
             "method": self.method,
             "url": self.url,
             "headers": self.headers,
@@ -38,6 +41,7 @@ class Request:
     def from_dict(cls, data: dict) -> "Request":
         """Create a Request from a dictionary."""
         return cls(
+            name=data.get("name", "Untitled Request"),
             method=data.get("method", "GET"),
             url=data.get("url", ""),
             headers=data.get("headers", {}),

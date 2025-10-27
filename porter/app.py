@@ -15,6 +15,7 @@ class PorterApp(App):
     """A Textual app for making HTTP requests."""
 
     TITLE = "Porter - HTTP Client"
+    SUB_TITLE = "Untitled Request"
     CSS = """
     Screen {
         background: $background;
@@ -35,6 +36,13 @@ class PorterApp(App):
         height: 100%;
         padding: 1;
         border-left: solid $primary;
+    }
+
+    #request-name {
+        width: 100%;
+        height: 3;
+        margin-bottom: 1;
+        border: solid $primary;
     }
 
     #request-line {
@@ -113,6 +121,7 @@ class PorterApp(App):
         ("ctrl+q", "quit", "Quit"),
         ("ctrl+enter", "send_request", "Send"),
         ("ctrl+shift+f", "format_json", "Format JSON"),
+        ("ctrl+k", "clear_body", "Clear Body"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -131,6 +140,11 @@ class PorterApp(App):
 
     def _load_request_into_ui(self, request: collections.Request) -> None:
         """Populate the UI with a saved request."""
+        # Set name
+        name_input = self.query_one("#request-name", Input)
+        name_input.value = request.name
+        self.sub_title = request.name
+
         # Set method
         method_select = self.query_one("#method-select", Select)
         method_select.value = request.method
@@ -160,12 +174,14 @@ class PorterApp(App):
 
     def _get_current_request(self) -> collections.Request:
         """Get the current request state from the UI."""
+        name = self.query_one("#request-name", Input).value
         method = self.query_one("#method-select", Select).value
         url = self.query_one("#url-input", Input).value
         headers = self._get_headers_from_ui()
         body = self.query_one("#body-text", TextArea).text
 
         return collections.Request(
+            name=name,
             method=method,
             url=url,
             headers=headers,
@@ -234,6 +250,13 @@ class PorterApp(App):
             self.notify("JSON formatted successfully", severity="information")
         except json.JSONDecodeError as e:
             self.notify(f"Invalid JSON: {str(e)}", severity="error")
+
+    def action_clear_body(self) -> None:
+        """Clear the request body editor."""
+        body_area = self.query_one("#body-text", TextArea)
+        body_area.text = ""
+        body_area.focus()
+        self.notify("Body cleared", severity="information")
 
     def _get_headers_from_ui(self) -> dict[str, str]:
         """Extract headers from the UI."""
@@ -314,6 +337,13 @@ class PorterApp(App):
             self._remove_header_row()
         elif event.button.id == "send-button":
             self.action_send_request()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle input changes."""
+        if event.input.id == "request-name":
+            # Update subtitle to show the request name
+            name = event.value.strip()
+            self.sub_title = name if name else "Untitled Request"
 
     def _add_header_row(self) -> None:
         """Add a new header row to the headers container."""
