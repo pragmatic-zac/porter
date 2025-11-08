@@ -1,14 +1,75 @@
 """Main Textual application for Porter."""
 
 import json
+from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal as HorizontalContainer
+from textual.reactive import reactive
 from textual.widgets import Button, Header, Footer, Input, Label, Select, TextArea
 
 from porter import collections
 from porter.http_client import send_request, validate_url
 from porter.widgets import HeaderRow, RequestEditor, ResponseViewer
+from textual.screen import ModalScreen
+from textual.containers import Vertical, Grid
+from textual.widgets import Static
+
+
+class CollectionSelectorScreen(ModalScreen[Path | None]):
+    """Modal screen for selecting a collection."""
+
+    def compose(self) -> ComposeResult:
+        """Create child widgets."""
+        with Vertical():
+            yield Static("Select a collection:", id="collection-selector-title")
+            # Get all collections
+            collection_list = collections.list_collections()
+            if not collection_list:
+                yield Static("No collections found. Create one with Ctrl+N")
+            else:
+                options = [
+                    (collections.get_collection_name(path), str(path))
+                    for path in collection_list
+                ]
+                yield Select(options=options, id="collection-select")
+            yield Button("Cancel", variant="default", id="cancel-button")
+            yield Button("Select", variant="primary", id="select-button")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "cancel-button":
+            self.dismiss(None)
+        elif event.button.id == "select-button":
+            select = self.query_one("#collection-select", Select)
+            if select.value != Select.BLANK:
+                self.dismiss(Path(select.value))
+            else:
+                self.dismiss(None)
+
+
+class NewCollectionScreen(ModalScreen[str | None]):
+    """Modal screen for creating a new collection."""
+
+    def compose(self) -> ComposeResult:
+        """Create child widgets."""
+        with Vertical():
+            yield Static("Enter a name for the new collection:", id="new-collection-title")
+            yield Input(placeholder="e.g., My API, Work Requests", id="collection-name-input")
+            yield Button("Cancel", variant="default", id="cancel-button")
+            yield Button("Create", variant="primary", id="create-button")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "cancel-button":
+            self.dismiss(None)
+        elif event.button.id == "create-button":
+            name_input = self.query_one("#collection-name-input", Input)
+            name = name_input.value.strip()
+            if name:
+                self.dismiss(name)
+            else:
+                self.dismiss(None)
 
 
 class PorterApp(App):
@@ -16,6 +77,10 @@ class PorterApp(App):
 
     TITLE = "Porter - HTTP Client"
     SUB_TITLE = "Untitled Request"
+
+    # Track the current collection
+    current_collection_path: reactive[Path] = reactive(collections.DEFAULT_COLLECTION)
+
     CSS = """
     Screen {
         background: $background;
@@ -115,6 +180,13 @@ class PorterApp(App):
         margin-bottom: 1;
         text-style: bold;
     }
+
+    #collection-label {
+        height: 1;
+        background: $boost;
+        text-align: center;
+        padding: 0 1;
+    }
     """
 
     BINDINGS = [
@@ -122,11 +194,14 @@ class PorterApp(App):
         ("ctrl+enter", "send_request", "Send"),
         ("ctrl+shift+f", "format_json", "Format JSON"),
         ("ctrl+k", "clear_body", "Clear Body"),
+        ("ctrl+o", "open_collection", "Open Collection"),
+        ("ctrl+n", "new_collection", "New Collection"),
     ]
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
+        yield Label("Collection: Default", id="collection-label")
         with HorizontalContainer(id="main-container"):
             yield RequestEditor()
             yield ResponseViewer()
@@ -134,9 +209,23 @@ class PorterApp(App):
 
     def on_mount(self) -> None:
         """Load saved request on app startup."""
-        saved_request = collections.load_request()
+        # Update collection label
+        self._update_collection_label()
+
+        # Load saved request from current collection
+        saved_request = collections.load_request(self.current_collection_path)
         if saved_request:
             self._load_request_into_ui(saved_request)
+
+    def watch_current_collection_path(self, new_path: Path) -> None:
+        """Update the UI when the collection changes."""
+        self._update_collection_label()
+
+    def _update_collection_label(self) -> None:
+        """Update the collection label with the current collection name."""
+        collection_name = collections.get_collection_name(self.current_collection_path)
+        label = self.query_one("#collection-label", Label)
+        label.update(f"Collection: {collection_name}")
 
     def _load_request_into_ui(self, request: collections.Request) -> None:
         """Populate the UI with a saved request."""
@@ -192,7 +281,7 @@ class PorterApp(App):
         """Save current request and quit the application."""
         # Save current request before exiting
         current_request = self._get_current_request()
-        collections.save_request(current_request)
+        collections.save_request(current_request, self.current_collection_path)
         self.exit()
 
     async def action_send_request(self) -> None:
@@ -257,6 +346,81 @@ class PorterApp(App):
         body_area.text = ""
         body_area.focus()
         self.notify("Body cleared", severity="information")
+
+    def action_open_collection(self) -> None:
+        """Open the collection selector modal."""
+        self.push_screen(CollectionSelectorScreen(), self._handle_collection_selection)
+
+    def _handle_collection_selection(self, selected_path: Path | None) -> None:
+        """Handle collection selection from modal."""
+        if selected_path is None:
+            return
+
+        # Save current request before switching
+        current_request = self._get_current_request()
+        collections.save_request(current_request, self.current_collection_path)
+
+        # Switch to new collection
+        self.current_collection_path = selected_path
+
+        # Load request from new collection
+        saved_request = collections.load_request(self.current_collection_path)
+        if saved_request:
+            self._load_request_into_ui(saved_request)
+        else:
+            # Clear UI if collection is empty
+            self._clear_request_ui()
+
+        self.notify(f"Switched to collection: {collections.get_collection_name(selected_path)}")
+
+    def action_new_collection(self) -> None:
+        """Open the new collection modal."""
+        self.push_screen(NewCollectionScreen(), self._handle_new_collection)
+
+    def _handle_new_collection(self, collection_name: str | None) -> None:
+        """Handle new collection creation."""
+        if collection_name is None or not collection_name.strip():
+            return
+
+        # Save current request before switching
+        current_request = self._get_current_request()
+        collections.save_request(current_request, self.current_collection_path)
+
+        # Create new collection
+        new_path = collections.create_collection(collection_name)
+
+        # Switch to new collection
+        self.current_collection_path = new_path
+
+        # Clear UI for new empty collection
+        self._clear_request_ui()
+
+        self.notify(f"Created collection: {collections.get_collection_name(new_path)}")
+
+    def _clear_request_ui(self) -> None:
+        """Clear all request fields in the UI."""
+        # Reset name
+        name_input = self.query_one("#request-name", Input)
+        name_input.value = "Untitled Request"
+        self.sub_title = "Untitled Request"
+
+        # Reset method
+        method_select = self.query_one("#method-select", Select)
+        method_select.value = "GET"
+
+        # Reset URL
+        url_input = self.query_one("#url-input", Input)
+        url_input.value = ""
+
+        # Reset body
+        body_area = self.query_one("#body-text", TextArea)
+        body_area.text = ""
+
+        # Reset headers - clear all and add one empty row
+        container = self.query_one("#headers-container")
+        for row in container.query(HeaderRow):
+            row.remove()
+        container.mount(HeaderRow())
 
     def _get_headers_from_ui(self) -> dict[str, str]:
         """Extract headers from the UI."""

@@ -102,3 +102,61 @@ def load_request(collection_path: Path = DEFAULT_COLLECTION) -> Optional[Request
     except (json.JSONDecodeError, KeyError, IOError):
         # If the file is corrupted or invalid, return None
         return None
+
+
+def list_collections() -> list[Path]:
+    """
+    List all collection files in ~/.porter/.
+
+    Returns:
+        List of Path objects for collection files
+    """
+    ensure_porter_dir()
+
+    # Find all .json files in the porter directory
+    collections = sorted(PORTER_DIR.glob("*.json"))
+    return collections
+
+
+def create_collection(name: str) -> Path:
+    """
+    Create a new empty collection file.
+
+    Args:
+        name: Name for the collection (without .json extension)
+
+    Returns:
+        Path to the created collection file
+    """
+    ensure_porter_dir()
+
+    # Sanitize the name to make it a valid filename
+    safe_name = name.strip().replace(" ", "-").lower()
+    if not safe_name.endswith(".json"):
+        safe_name += ".json"
+
+    collection_path = PORTER_DIR / safe_name
+
+    # Create empty collection with default structure
+    data = {
+        "version": "1.0",
+        "requests": [],
+    }
+
+    with open(collection_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+    return collection_path
+
+
+def get_collection_name(collection_path: Path) -> str:
+    """
+    Get a display name for a collection from its path.
+
+    Args:
+        collection_path: Path to the collection file
+
+    Returns:
+        Display name (filename without .json extension)
+    """
+    return collection_path.stem.replace("-", " ").title()
